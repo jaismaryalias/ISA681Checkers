@@ -1,42 +1,32 @@
-var express = require('express');
-var homeRouter = express.Router();
-var models = require('../models');
+const express = require("express");
+const models = require("../models");
 
-/** get dashboard or home page */
+const router = express.Router();
 
-homeRouter.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
+  console.log("home:", req.session);
 
-    console.log('home:', req.session);
-    
-    var email = req.session.email;
-    var name=req.session.name;
+  if (req.session && req.session.email) {
+    const player = await models.Player.findOne({
+      where: { email: req.session.email }
+    });
 
-    if (req.session && req.session.email) {
+    if (player) {
+      res.locals.email = player.dataValues.email;
+      res.locals.name = `${player.dataValues.firstName} ${
+        player.dataValues.lastName
+      }`;
 
-        let player = await models.Player.findOne({ where: { email: req.session.email } });
-
-        if (player) {
-
-
-            res.locals.email = player.dataValues.email;
-            res.locals.name = player.dataValues.firstName + " " + player.dataValues.lastName;
-
-            res.render('home', {
-                title: 'Home Page',
-                name: player.dataValues.firstName + " " + player.dataValues.lastName,
-                email: player.dataValues.email
-            });
-
-        } else {
-            req.session.destroy();
-            res.render('login', { title: 'Checkers', csrfToken: req.csrfToken() });
-
-        }
+      res.render("home", {
+        title: "Home Page",
+        name: `${player.dataValues.firstName} ${player.dataValues.lastName}`,
+        email: player.dataValues.email
+      });
+    } else {
+      req.session.destroy();
+      res.render("login", { title: "Checkers", csrfToken: req.csrfToken() });
     }
+  }
+});
 
-})
-
-module.exports = homeRouter;
-
-
-
+module.exports = router;

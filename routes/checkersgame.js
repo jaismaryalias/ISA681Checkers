@@ -1,38 +1,32 @@
-var express = require('express');
-var gameRouter = express.Router();
-var models= require('./../models');
-const Op= models.Sequelize.Op;
+const express = require("express");
+const Sequelize = require("sequelize");
+const models = require("./../models");
 
+const gameRouter = express.Router();
+const { Op } = Sequelize;
 
-/* GET checkers game page. */
-gameRouter.get('/', async (req, res) =>{
-    console.log(req.session);
-    var email = req.session.email;
-    var name=req.session.name;
-
-    var gameExist= await models.Game.findOne({
-        where:{
-            status:'ready',
-            [Op.or]:[{player1_id:email},{player2_id:email}]
-        }   
-    });
-
-    if(gameExist){
-        console.log('gameExists',gameExist.dataValues);
-        var player1 = gameExist.dataValues.player1_id;
-        var player2 = gameExist.dataValues.player2_id;
-        var roomId = gameExist.dataValues.gameId;
-        res.render('checkersGame', { 
-            title: 'Lets Play Checkers', 
-            player1: player1, 
-            player2: player2, 
-            gameRoom: roomId,
-            my_name:name,
-            my_email:email
-        });
-    }else{
-        res.redirect('/login');
+gameRouter.get("/", async (req, res) => {
+  const { email } = req.session;
+  const { name } = req.session;
+  const game = await models.Game.findOne({
+    where: {
+      status: "ready",
+      [Op.or]: [{ player1_id: email }, { player2_id: email }]
     }
-  
-})
+  });
+
+  if (game) {
+    console.log("gameExists", game.dataValues);
+    res.render("checkersGame", {
+      title: "Lets Play Checkers",
+      player1: game.dataValues.player1_id,
+      player2: game.dataValues.player2_id,
+      gameRoom: game.dataValues.gameId,
+      my_name: name,
+      my_email: email
+    });
+  } else {
+    res.redirect("/login");
+  }
+});
 module.exports = gameRouter;

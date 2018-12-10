@@ -1,277 +1,253 @@
-require('express-async-errors');
-var express = require('express');
-const helmet = require('helmet');
-var path = require('path');
-var fs = require('fs');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-var bodyParser = require('body-parser');
-var https = require('https');
-var debug = require('debug');
-var csrf = require('csurf');
-var session = require('express-session');
-var cors = require('cors');
-var morgan = require('morgan');
-var hsts = require('hsts');
-const models = require('./models');
-const xssFilter = require('x-xss-protection');
+const express = require("express");
+require("express-async-errors");
+const helmet = require("helmet");
+const fs = require("fs");
+const path = require("path");
+const morgan = require("morgan");
+const bodyParser = require("body-parser");
+const https = require("https");
+const csrf = require("csurf");
+const session = require("express-session");
+const cors = require("cors");
+const hsts = require("hsts");
+const socketIO = require("socket.io");
+const xssFilter = require("x-xss-protection");
+const ejs = require("ejs");
+const models = require("./models");
+const error = require("./middleware/error");
 
+const csrfProtection = csrf({ cookie: false });
 
+// Initialize Routes
+const indexRouter = require("./routes/index");
+const loginRouter = require("./routes/login");
+const registerRouter = require("./routes/register");
+const homeRouter = require("./routes/home");
+const logoutRouter = require("./routes/logout");
+const gameRouter = require("./routes/checkersgame");
 
-
-//middleware
-var error = require('./middleware/error');
-
-var csrfProtection = csrf({ cookie: false });
-
-
-var indexRouter = require('./routes/index');
-var loginRouter = require('./routes/login');
-var registerRouter = require('./routes/register');
-var homeRouter = require('./routes/home');
-var logoutRouter=require('./routes/logout');
-var gameRouter=require('./routes/checkersgame');
-
-/*var User = require('./models/users');*/
-
-/**
- * get the keys from /certificates folder
- */
-var options = {
-  //testing
-//key: fs.readFileSync('./bin/certificates/newCert-key.pem'),
-  //cert: fs.readFileSync('./bin/certificates/newCert-cert.pem'),
-  //ca: [fs.readFileSync('./bin/certificates/newCert-cert.pem')],
+// Load certificates from ENV
+const options = {
   rejectUnauthorized: true,
- // key: fs.readFileSync('./bin/certificates/checkers-key.pem'),
-  ///cert: fs.readFileSync('./bin/certificates/checkers-cert.pem'),
- // dhparam: fs.readFileSync('./bin/certificates/dhparam.pem'),
- // ca: [fs.readFileSync('./bin/certificates/checkers-cert.pem')]
-
- key: fs.readFileSync('./bin/certificates/localhost.key'),
-  cert: fs.readFileSync('./bin/certificates/localhost.crt'),
-  //ca: [fs.readFileSync('./bin/certificates/newCert-cert.pem')],
-
- 
+  key: fs.readFileSync("./bin/certificates/localhost.key"),
+  cert: fs.readFileSync("./bin/certificates/localhost.crt")
 };
 
+const app = express();
+const server = https.createServer(options, app);
+const io = socketIO(server);
+app.set("trust proxy", 1);
 
-var app = express();
-var server = https.createServer(options, app);
-var io = require('socket.io')(server);
-//io.set('flash policy port', 3300)
-/*app.use(function(req, res, next){
-  res.io = io;
-  next();
-});*/
-app.set('trust proxy', 1);
-app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use('/jquery', express.static(__dirname + '/node_modules/jquery/dist/'));
-app.use(express.static(path.join(__dirname, 'public')));
-app.set('views', __dirname + '/public/views');
-app.engine('html', require('ejs').renderFile);
-app.set('view engine', 'pug');
+app.use(
+  "/jquery",
+  express.static(path.join(__dirname, "/node_modules/jquery/dist/"))
+);
+app.use(express.static(path.join(__dirname, "public")));
+app.set("views", path.join(__dirname, "/public/views"));
+app.engine("html", ejs.renderFile);
+app.set("view engine", "pug");
 
-app.use(morgan('combined'));
+app.use(morgan("combined"));
 app.use(cors());
 
-app.use(session({
-  cookieName: 'cqsession',
-  secret: 'jiqch6ec8ker1sinf2orm7',
-  saveUninitialized: false,
-  resave: false,
-  cookie: {
-    maxAge: 600000,
-    secure: true,
-    httpOnly: true,
-    domain:'localhost'
-  },
-}))
+app.use(
+  session({
+    cookieName: "cqsession",
+    secret: "jiqch6ec8ker1sinf2orm7",
+    saveUninitialized: false,
+    resave: false,
+    cookie: {
+      maxAge: 600000,
+      secure: true,
+      httpOnly: true,
+      domain: "localhost"
+    }
+  })
+);
 
 app.use(helmet());
 app.use(helmet.noCache());
-app.use(helmet.contentSecurityPolicy({
-  directives: {
-    defaultSrc: ["'self'", 'wss://localhost:3001'],
-    styleSrc: ["'self'", "'unsafe-inline'"],
-  }, setAllHeaders: true,
-}));
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'", "wss://localhost:3001"],
+      styleSrc: ["'self'", "'unsafe-inline'"]
+    },
+    setAllHeaders: true
+  })
+);
 app.use(helmet.noSniff());
-app.use(helmet.referrerPolicy({ policy: 'same-origin' }));
-app.use(helmet.frameguard({ action: 'sameorigin' }));
-var sixtyDaysInSeconds = 5184000;
-app.use(hsts({
-  maxAge: sixtyDaysInSeconds,
-  includeSubDomains:true,
-  preload:true
-}))
+app.use(helmet.referrerPolicy({ policy: "same-origin" }));
+app.use(helmet.frameguard({ action: "sameorigin" }));
+
+const SIXTY_DAYS_IN_SECONDS = 5184000;
+app.use(
+  hsts({
+    maxAge: SIXTY_DAYS_IN_SECONDS,
+    includeSubDomains: true,
+    preload: true
+  })
+);
 
 app.use(xssFilter());
 app.use(xssFilter({ setOnOldIE: true }));
-
-//app.use(cookieParser());
 app.use(csrfProtection);
 
-//app.use(socketIO);
-//sockets
+const AllGames = {};
+const globalStats = [];
 
-//Socket Events
-var AllGames = {};
-var globalStats = [];
+io.on("connection", socket => {
+  console.log(`Event: Player connected, socket id: ${socket.id}`);
 
-io.on('connection', function (socket) {
-  console.log('A player connected', socket.id);
-
-  io.sockets.connected[socket.id].emit('takeStats', globalStats);
-  socket.on('disconnect', function () {
-    setTimeout(function () {
-      console.log("User " + socket.id + " disconnected!");
+  io.sockets.connected[socket.id].emit("takeStats", globalStats);
+  socket.on("disconnect", () => {
+    setTimeout(() => {
+      console.log(`Event: Player disconnected, socket id: ${socket.id}`);
     }, 10000);
-
   });
 
-  var list = io.sockets.sockets;
   console.log("Connected sockets:");
-  Object.keys(io.sockets.sockets).forEach(function (id) {
-    console.log("ID: ", id);
+  Object.keys(io.sockets.sockets).forEach(id => {
+    console.log(`ID: ${id}`);
   });
 
-  socket.emit('message', { 'inital ': 'message from server' });
-  socket.on('received', (data) => {
-    console.log('received :', data);
-  })
+  socket.emit("message", { "inital ": "message from server" });
+  socket.on("received", data => {
+    console.log("received :", data);
+  });
 
-  //create gameroom
-  socket.on('createGameRoom', async function (data) {
-    var thisGameId = (Math.random() * 100000) | 0;
-    var email = data.email;
+  // create gameroom
+  socket.on("createGameRoom", async data => {
+    const thisGameId = Math.random() * 100000 || 0;
+    let email = data.email;
 
     socket.join(thisGameId.toString());
-    //var numPlayersInRoom = 1;
     AllGames[thisGameId] = 1;
-    console.log('AllGames', AllGames);
-    //db insert for above logic
+    console.log("AllGames", AllGames);
 
-    var game = {
+    const game = {
       gameId: thisGameId,
       player1_id: email,
-      player2_id: '',
-      status: 'waiting'
+      player2_id: "",
+      status: "waiting"
     };
     try {
       const gameRoom = await models.Game.create(game);
       if (gameRoom) {
-        socket.emit('newGameRoomCreated', { 'gRoomId': thisGameId, 'mySocketId': socket.id, 'numPlayersInRoom': 1 });
-        console.log('GameRoomCreated: ' + thisGameId + " user email: ",email);
+        socket.emit("newGameRoomCreated", {
+          gRoomId: thisGameId,
+          mySocketId: socket.id,
+          numPlayersInRoom: 1
+        });
+        console.log(
+          `Event: GameRoomCreated, Game ID: ${thisGameId}, Player Email: ${email}`
+        );
       }
-
     } catch (err) {
       console.log(err);
-      socket.emit('error', err);
+      socket.emit("error", err);
     }
-
   });
 
-  socket.on('getGameRooms', () => {
-    socket.emit('gameRoomList', AllGames);
-    console.log('sending gameRooms..', AllGames);
-  })
+  socket.on("getGameRooms", () => {
+    socket.emit("gameRoomList", AllGames);
+    console.log("sending gameRooms..", AllGames);
+  });
 
-  socket.on('joinGameRoom', async (newPlayer) => {
-    var playerInfo = {
+  socket.on("joinGameRoom", async newPlayer => {
+    const playerInfo = {
       gRoomId: newPlayer.gRoomId,
       mySocketId: socket.id,
       numPlayersInRoom: 2
-    }
+    };
 
-    var roomId = playerInfo.gRoomId;
+    const roomId = playerInfo.gRoomId;
     socket.join(roomId);
     AllGames[playerInfo.gRoomId] = 2;
-    //now update db
 
-    const { error } = models.Game.validateEmail({ player2_id: newPlayer.email });
-    if (error) socket.emit('error', { message: 'Invalid player Email Received' })
+    const { error } = models.Game.validateEmail({
+      player2_id: newPlayer.email
+    });
+    if (error)
+      socket.emit("error", { message: "Invalid player Email Received" });
 
     try {
-      const gRoomUpdate = await models.Game.update({ player2_id: newPlayer.email, status: "ready" }, {
-        where: { gameId: playerInfo.gRoomId }
-      });
+      const gRoomUpdate = await models.Game.update(
+        { player2_id: newPlayer.email, status: "ready" },
+        {
+          where: { gameId: playerInfo.gRoomId }
+        }
+      );
 
       if (gRoomUpdate) {
-        socket.emit('joinedRoom', playerInfo);
-        const getRoomInfo = await models.Game.findOne({ where: { gameId: roomId } });
+        socket.emit("joinedRoom", playerInfo);
+        const getRoomInfo = await models.Game.findOne({
+          where: { gameId: roomId }
+        });
         if (getRoomInfo)
-          io.to(roomId).emit('startCheckers', getRoomInfo.dataValues);
+          io.to(roomId).emit("startCheckers", getRoomInfo.dataValues);
       }
-
     } catch (err) {
       console.log(err);
-      socket.emit('error', err);
-
+      socket.emit("error", err);
     }
-
   });
 
-
-  socket.on('moveTo', async(moveSrcDest)=>{
+  socket.on("moveTo", async moveSrcDest => {
     console.log(moveSrcDest);
-    io.sockets.emit('moved',{move:moveSrcDest});
+    io.sockets.emit("moved", { move: moveSrcDest });
+  });
 
-  })
-  socket.on('move',async(moveData)=>{
+  socket.on("move", async moveData => {
     console.log(moveData);
     const email = moveData.email;
-    const roomId=moveData.roomId;
-    var gameMove = {
-      gameId:moveData.roomId,
-      player:email,
-      src:moveData.tile,
-      dest:moveData.position
-    }
-    
-    io.sockets.emit('moved',{tile:moveData.tile,piece:moveData.piece,board:moveData.board})
-    
-    try{
+    const roomId = moveData.roomId;
+    const gameMove = {
+      gameId: moveData.roomId,
+      player: email,
+      src: moveData.tile,
+      dest: moveData.position
+    };
+    io.sockets.emit("moved", {
+      tile: moveData.tile,
+      piece: moveData.piece,
+      board: moveData.board
+    });
 
-      console.log('updating Game....');
-      const gameData = await models.Game.update({status:"playing"}, {
-        where :{gameId:roomId}
-      });
+    try {
+      console.log("Updating game");
+      const gameData = await models.Game.update(
+        { status: "playing" },
+        {
+          where: { gameId: roomId }
+        }
+      );
 
-      if(gameData){
-        console.log('updating game moves');
-/*
-        const gameMoves = await models.GameMove.create(gameMove);
-        if(gameMoves){
-          console.log('Moves Added..')
-        }*/
+      if (gameData) {
+        console.log("Updating moves");
       }
-    }catch(err){
-
+    } catch (err) {
+      console.error(err);
     }
-    
-  })
-  
-
-
+  });
 });
 
-app.use('/', indexRouter);
-app.use('/login', loginRouter);
-app.use('/register', registerRouter);
-app.use('/home',homeRouter);
-app.use('/logout',logoutRouter);
-app.use('/checkersGame',gameRouter)
+app.use("/", indexRouter);
+app.use("/login", loginRouter);
+app.use("/register", registerRouter);
+app.use("/home", homeRouter);
+app.use("/logout", logoutRouter);
+app.use("/checkersGame", gameRouter);
 
 // catch 404 and forward to error handler
-app.use(function (req, res, next) {
+app.use((req, res, next) => {
   next();
 });
 
 app.use(error);
 
-module.exports = { app: app, server: server };
+module.exports = { app, server };
